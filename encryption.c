@@ -4,7 +4,6 @@
 #include <time.h>
 #include "scheduling.h"
 
-/* Local copy of S-box for SubBytes */
 static const uint8_t sbox_local[256] = {
   0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
   0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
@@ -24,12 +23,10 @@ static const uint8_t sbox_local[256] = {
   0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
 
-/* xtime (multiply by 2 in GF(2^8)) */
 static uint8_t xtime(uint8_t x) {
     return (uint8_t) ((x << 1) ^ ((x & 0x80) ? 0x1B : 0x00));
 }
 
-/* Multiply by 1,2,3 (we only need these in AES mixcolumns) */
 static uint8_t mul_by(uint8_t a, uint8_t b) {
     if (b == 1) return a;
     if (b == 2) return xtime(a);
@@ -37,21 +34,21 @@ static uint8_t mul_by(uint8_t a, uint8_t b) {
     return 0;
 }
 
-/* AddRoundKey - XOR state with round key */
+// AddRoundKey - XOR state with round key 
 static void add_round_key(uint8_t state[4][4], const roundkeys_t *rk, int round) {
     for (int col = 0; col < 4; ++col)
         for (int row = 0; row < 4; ++row)
             state[row][col] ^= rk->w[round * 4 + col][row];
 }
 
-/* SubBytes */
+// SubBytes 
 static void sub_bytes(uint8_t state[4][4]) {
     for (int r = 0; r < 4; ++r)
         for (int c = 0; c < 4; ++c)
             state[r][c] = sbox_local[state[r][c]];
 }
 
-/* ShiftRows */
+// ShiftRows 
 static void shift_rows(uint8_t state[4][4]) {
     uint8_t tmp[4];
     for (int c = 0; c < 4; ++c) tmp[c] = state[1][(c + 1) % 4];
@@ -62,7 +59,6 @@ static void shift_rows(uint8_t state[4][4]) {
     for (int c = 0; c < 4; ++c) state[3][c] = tmp[c];
 }
 
-/* MixColumns */
 static void mix_columns(uint8_t state[4][4]) {
     for (int c = 0; c < 4; ++c) {
         uint8_t a0 = state[0][c];
@@ -80,7 +76,7 @@ static void mix_columns(uint8_t state[4][4]) {
     }
 }
 
-/* Print state as hex */
+// Printing state as hex
 static void print_state_hex(const uint8_t state[4][4]) {
     for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c)
@@ -97,7 +93,7 @@ static void plaintext_to_state(const char *pt16, uint8_t state[4][4]) {
     }
 }
 
-/* encrypt_block: applies 10 rounds similar to the original C++ algorithm flow */
+// encrypt_block
 static void encrypt_block(uint8_t state[4][4], const roundkeys_t *rk) {
     for (int round = 0; round < 10; ++round) {
         add_round_key(state, rk, round);

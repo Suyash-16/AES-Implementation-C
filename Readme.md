@@ -28,8 +28,6 @@ This project implements a **simplified AES encryption algorithm** in C. It demon
 - Encryption of **16-byte blocks** of plaintext.
 - Measurement of **encryption execution time**.
 
-⚠ **Note:** This implementation is educational and **not suitable for production-level encryption**.
-
 ---
 
 ## Project Structure

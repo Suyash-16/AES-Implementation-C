@@ -1,10 +1,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-#include <time.h>
 #include "scheduling.h"
 
-static const uint8_t sbox_local[256] = {
+static const uint8_t sbox[256] = {
   0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
   0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
   0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
@@ -23,40 +22,38 @@ static const uint8_t sbox_local[256] = {
   0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16
 };
 
-static uint8_t xtime(uint8_t x) {
-    return (uint8_t) ((x << 1) ^ ((x & 0x80) ? 0x1B : 0x00));
-}
+static inline uint8_t xtime(uint8_t x) { return (uint8_t)((x << 1) ^ ((x & 0x80) ? 0x1B : 0x00)); }
 
 static uint8_t mul_by(uint8_t a, uint8_t b) {
     if (b == 1) return a;
     if (b == 2) return xtime(a);
     if (b == 3) return xtime(a) ^ a;
-    return 0;
+    uint8_t r = 0;
+    while (b) {
+        if (b & 1) r ^= a;
+        a = xtime(a);
+        b >>= 1;
+    }
+    return r;
 }
 
-// AddRoundKey - XOR state with round key 
 static void add_round_key(uint8_t state[4][4], const roundkeys_t *rk, int round) {
     for (int col = 0; col < 4; ++col)
         for (int row = 0; row < 4; ++row)
             state[row][col] ^= rk->w[round * 4 + col][row];
 }
 
-// SubBytes 
 static void sub_bytes(uint8_t state[4][4]) {
     for (int r = 0; r < 4; ++r)
         for (int c = 0; c < 4; ++c)
-            state[r][c] = sbox_local[state[r][c]];
+            state[r][c] = sbox[state[r][c]];
 }
 
-// ShiftRows 
 static void shift_rows(uint8_t state[4][4]) {
-    uint8_t tmp[4];
-    for (int c = 0; c < 4; ++c) tmp[c] = state[1][(c + 1) % 4];
-    for (int c = 0; c < 4; ++c) state[1][c] = tmp[c];
-    for (int c = 0; c < 4; ++c) tmp[c] = state[2][(c + 2) % 4];
-    for (int c = 0; c < 4; ++c) state[2][c] = tmp[c];
-    for (int c = 0; c < 4; ++c) tmp[c] = state[3][(c + 3) % 4];
-    for (int c = 0; c < 4; ++c) state[3][c] = tmp[c];
+    uint8_t tmp;
+    tmp = state[1][0]; state[1][0] = state[1][1]; state[1][1] = state[1][2]; state[1][2] = state[1][3]; state[1][3] = tmp;
+    tmp = state[2][0]; state[2][0] = state[2][2]; state[2][2] = tmp; tmp = state[2][1]; state[2][1] = state[2][3]; state[2][3] = tmp;
+    tmp = state[3][3]; state[3][3] = state[3][2]; state[3][2] = state[3][1]; state[3][1] = state[3][0]; state[3][0] = tmp;
 }
 
 static void mix_columns(uint8_t state[4][4]) {
@@ -65,23 +62,10 @@ static void mix_columns(uint8_t state[4][4]) {
         uint8_t a1 = state[1][c];
         uint8_t a2 = state[2][c];
         uint8_t a3 = state[3][c];
-        uint8_t r0 = (uint8_t) (mul_by(a0, 2) ^ mul_by(a1, 3) ^ mul_by(a2, 1) ^ mul_by(a3, 1));
-        uint8_t r1 = (uint8_t) (mul_by(a0, 1) ^ mul_by(a1, 2) ^ mul_by(a2, 3) ^ mul_by(a3, 1));
-        uint8_t r2 = (uint8_t) (mul_by(a0, 1) ^ mul_by(a1, 1) ^ mul_by(a2, 2) ^ mul_by(a3, 3));
-        uint8_t r3 = (uint8_t) (mul_by(a0, 3) ^ mul_by(a1, 1) ^ mul_by(a2, 1) ^ mul_by(a3, 2));
-        state[0][c] = r0;
-        state[1][c] = r1;
-        state[2][c] = r2;
-        state[3][c] = r3;
-    }
-}
-
-// Printing state as hex
-static void print_state_hex(const uint8_t state[4][4]) {
-    for (int r = 0; r < 4; ++r) {
-        for (int c = 0; c < 4; ++c)
-            printf("%02X ", state[r][c]);
-        printf("\n");
+        state[0][c] = (uint8_t)(mul_by(a0,2) ^ mul_by(a1,3) ^ mul_by(a2,1) ^ mul_by(a3,1));
+        state[1][c] = (uint8_t)(mul_by(a0,1) ^ mul_by(a1,2) ^ mul_by(a2,3) ^ mul_by(a3,1));
+        state[2][c] = (uint8_t)(mul_by(a0,1) ^ mul_by(a1,1) ^ mul_by(a2,2) ^ mul_by(a3,3));
+        state[3][c] = (uint8_t)(mul_by(a0,3) ^ mul_by(a1,1) ^ mul_by(a2,1) ^ mul_by(a3,2));
     }
 }
 
@@ -89,56 +73,53 @@ static void plaintext_to_state(const char *pt16, uint8_t state[4][4]) {
     for (int i = 0; i < 16; ++i) {
         int row = i % 4;
         int col = i / 4;
-        state[row][col] = (uint8_t) pt16[i];
+        state[row][col] = (uint8_t)pt16[i];
     }
 }
 
-// encrypt_block
+static void print_state_hex_colmaj(const uint8_t state[4][4]) {
+    for (int c = 0; c < 4; ++c) {
+        for (int r = 0; r < 4; ++r) {
+            printf("%02X ", state[r][c]);
+        }
+    }
+    printf("\n");
+}
+
 static void encrypt_block(uint8_t state[4][4], const roundkeys_t *rk) {
-    for (int round = 0; round < 10; ++round) {
-        add_round_key(state, rk, round);
+    add_round_key(state, rk, 0);
+    for (int round = 1; round <= 9; ++round) {
         sub_bytes(state);
         shift_rows(state);
         mix_columns(state);
+        add_round_key(state, rk, round);
     }
+    sub_bytes(state);
+    shift_rows(state);
     add_round_key(state, rk, 10);
 }
 
-int main(void) {
-    clock_t tstart = clock();
-
+int main(int argc, char **argv) {
     const char *key = "Thats my Kung Fu";
-    const char *plaintext = "One Two Nine One";
+    const char *plaintext = "Two One Nine Two";
+    if (argc >= 2) plaintext = argv[1];
+    if (argc >= 3) key = argv[2];
 
     roundkeys_t rk;
     generateRoundKeys_from_keystring(key, &rk);
 
-    for (size_t i = 0; i < strlen(plaintext); i += 16) {
-        char chunk[17];
-        memset(chunk, 0, sizeof(chunk));
-        size_t left = strlen(plaintext) - i;
-        if (left >= 16) {
-            memcpy(chunk, plaintext + i, 16);
-        } else {
-            memcpy(chunk, plaintext + i, left);
-            for (size_t p = left; p < 16; ++p) chunk[p] = ' ';
-        }
-        printf("text is: %.16s\n", chunk);
+    char chunk[17];
+    memset(chunk, ' ', 16);
+    chunk[16] = '\0';
+    size_t len = strlen(plaintext);
+    if (len >= 16) memcpy(chunk, plaintext, 16); else memcpy(chunk, plaintext, len);
 
-        uint8_t state[4][4];
-        plaintext_to_state(chunk, state);
+    uint8_t state[4][4];
+    plaintext_to_state(chunk, state);
 
-        encrypt_block(state, &rk);
+    encrypt_block(state, &rk);
 
-        print_state_hex(state);
-        printf("\n\n");
-    }
-
-    clock_t tend = clock();
-    double usec = ((double)(tend - tstart)) / CLOCKS_PER_SEC * 1e6;
-    double msec = ((double)(tend - tstart)) / CLOCKS_PER_SEC * 1e3;
-    printf("Execution time: %.0f microseconds\n", usec);
-    printf("Execution time: %.0f milliseconds\n", msec);
-
+    printf("text is: %.16s\n", chunk);
+    print_state_hex_colmaj(state);
     return 0;
 }

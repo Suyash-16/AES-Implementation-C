@@ -1,6 +1,3 @@
-// decryption.c
-
-
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
@@ -8,7 +5,6 @@
 #include <stdlib.h>
 #include "scheduling.h"
 
-//helpers
 static uint8_t xtime(uint8_t x) {
     return (uint8_t) ((x << 1) ^ ((x & 0x80) ? 0x1B : 0x00));
 }
@@ -23,7 +19,6 @@ static uint8_t mul(uint8_t a, uint8_t b) {
     return r;
 }
 
-//inverse sbox
 static const uint8_t inv_sbox[256] = {
   0x52,0x09,0x6A,0xD5,0x30,0x36,0xA5,0x38,0xBF,0x40,0xA3,0x9E,0x81,0xF3,0xD7,0xFB,
   0x7C,0xE3,0x39,0x82,0x9B,0x2F,0xFF,0x87,0x34,0x8E,0x43,0x44,0xC4,0xDE,0xE9,0xCB,
@@ -43,14 +38,12 @@ static const uint8_t inv_sbox[256] = {
   0x17,0x2B,0x04,0x7E,0xBA,0x77,0xD6,0x26,0xE1,0x69,0x14,0x63,0x55,0x21,0x0C,0x7D
 };
 
-// add round key
 static void add_round_key(uint8_t state[4][4], const roundkeys_t *rk, int round) {
     for (int col = 0; col < 4; ++col)
         for (int row = 0; row < 4; ++row)
             state[row][col] ^= rk->w[round * 4 + col][row];
 }
 
-// inverse 
 static void inv_sub_bytes(uint8_t state[4][4]) {
     for (int r = 0; r < 4; ++r)
         for (int c = 0; c < 4; ++c)
@@ -58,15 +51,10 @@ static void inv_sub_bytes(uint8_t state[4][4]) {
 }
 
 static void inv_shift_rows(uint8_t state[4][4]) {
-    uint8_t tmp[4];
-    for (int c = 0; c < 4; ++c) tmp[c] = state[1][(c + 3) % 4];
-    for (int c = 0; c < 4; ++c) state[1][c] = tmp[c];
-
-    for (int c = 0; c < 4; ++c) tmp[c] = state[2][(c + 2) % 4];
-    for (int c = 0; c < 4; ++c) state[2][c] = tmp[c];
-
-    for (int c = 0; c < 4; ++c) tmp[c] = state[3][(c + 1) % 4];
-    for (int c = 0; c < 4; ++c) state[3][c] = tmp[c];
+    uint8_t tmp;
+    tmp = state[1][3]; state[1][3] = state[1][2]; state[1][2] = state[1][1]; state[1][1] = state[1][0]; state[1][0] = tmp;
+    tmp = state[2][0]; state[2][0] = state[2][2]; state[2][2] = tmp; tmp = state[2][1]; state[2][1] = state[2][3]; state[2][3] = tmp;
+    tmp = state[3][0]; state[3][0] = state[3][1]; state[3][1] = state[3][2]; state[3][2] = state[3][3]; state[3][3] = tmp;
 }
 
 static void inv_mix_columns(uint8_t state[4][4]) {
@@ -75,7 +63,6 @@ static void inv_mix_columns(uint8_t state[4][4]) {
         uint8_t a1 = state[1][c];
         uint8_t a2 = state[2][c];
         uint8_t a3 = state[3][c];
-
         state[0][c] = (uint8_t)( mul(a0,14) ^ mul(a1,11) ^ mul(a2,13) ^ mul(a3,9) );
         state[1][c] = (uint8_t)( mul(a0,9)  ^ mul(a1,14) ^ mul(a2,11) ^ mul(a3,13));
         state[2][c] = (uint8_t)( mul(a0,13) ^ mul(a1,9)  ^ mul(a2,14) ^ mul(a3,11));
@@ -83,18 +70,21 @@ static void inv_mix_columns(uint8_t state[4][4]) {
     }
 }
 
-// decrypt block 
 static void decrypt_block(uint8_t state[4][4], const roundkeys_t *rk) {
     add_round_key(state, rk, 10);
-    for (int round = 9; round >= 0; --round) {
-        inv_mix_columns(state);
+
+    for (int round = 9; round >= 1; --round) {
         inv_shift_rows(state);
         inv_sub_bytes(state);
         add_round_key(state, rk, round);
+        inv_mix_columns(state);
     }
+
+    inv_shift_rows(state);
+    inv_sub_bytes(state);
+    add_round_key(state, rk, 0);
 }
 
-// string conversion 
 static void print_state_hex(const uint8_t state[4][4]) {
     for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c)
@@ -112,7 +102,6 @@ static void state_to_string(uint8_t state[4][4], char out16[17]) {
     out16[16] = '\0';
 }
 
-// parsing hex token 
 static int parse_hex_byte(const char *tok, uint8_t *out) {
     int hi = -1, lo = -1;
     int len = (int)strlen(tok);
@@ -144,7 +133,6 @@ static int read_16_bytes_from_string_or_stdin(const char *input_str, uint8_t byt
         strncpy(buf, input_str, sizeof(buf)-1);
         buf[sizeof(buf)-1] = 0;
     } else {
-        
         size_t off = 0;
         while (off + 1 < sizeof(buf)) {
             int c = fgetc(stdin);
@@ -157,7 +145,6 @@ static int read_16_bytes_from_string_or_stdin(const char *input_str, uint8_t byt
     char *p = buf;
     int count = 0;
     while (count < 16) {
- 
         while (*p && (isspace((unsigned char)*p) || *p == ',')) ++p;
         if (!*p) break;
         
@@ -181,8 +168,13 @@ int main(int argc, char **argv) {
     const char *key_in = NULL;
     const char *ct_in = NULL;
 
-    if (argc >= 2) key_in = argv[1];
-    if (argc >= 3) ct_in = argv[2];
+    if (argc >= 3) {
+        key_in = argv[1];
+        ct_in = argv[2];
+    } else if (argc == 2) {
+        ct_in = argv[1];
+        key_in = NULL;
+    }
 
     const char *default_key = "Thats my Kung Fu";
     char key16[17];
@@ -203,7 +195,6 @@ int main(int argc, char **argv) {
     uint8_t bytes[16];
     if (read_16_bytes_from_string_or_stdin(ct_in, bytes) != 0) {
         fprintf(stderr, "Sorry: could not read 16 hex bytes for ciphertext.\n");
-        fprintf(stderr, "  ./decrypt \"%s\" \"34 A0 D0 46 3B 8D C2 BE 60 E5 A8 67 10 6B 03 DE\"\n", key16);
         return 1;
     }
     uint8_t state[4][4];
